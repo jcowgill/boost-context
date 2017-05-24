@@ -161,15 +161,23 @@ public:
 template< typename Record, typename StackAlloc, typename Fn >
 fcontext_t context_create( StackAlloc salloc, Fn && fn) {
     auto sctx = salloc.allocate();
+    BOOST_ASSERT( ( sizeof( Record) + 2048) < sctx.size); // stack at least of 2kB
     // reserve space for control structure
-    void * storage = static_cast< char * >( sctx.sp) - sizeof(Record);
-    void * stack_top = static_cast< char * >( storage) - 64;
-    // placment new for control structure on context-stack
+    // `storage` should be 16-byte algined
+    void * storage = reinterpret_cast< void * >(
+            ( reinterpret_cast< uintptr_t >( sctx.sp) - static_cast< uintptr_t >( sizeof( Record) - 15) )
+            & ~ static_cast< uintptr_t >( 0x0f) );
+    // placment new for control structure on context stack
     Record * record = new ( storage) Record{
             sctx, salloc, std::forward< Fn >( fn) };
-    // stack size
-    const std::size_t size = sctx.size - sizeof(Record) - 64;
+    // 64byte gab between control structure and stack top
+    // should be 16byte aligned
+    void * stack_top = reinterpret_cast< void * >(
+            reinterpret_cast< uintptr_t >( storage) - static_cast< uintptr_t >( 64) );
+    void * stack_bottom = reinterpret_cast< void * >(
+            reinterpret_cast< uintptr_t >( sctx.sp) - static_cast< uintptr_t >( sctx.size) );
     // create fast-context
+    const std::size_t size = reinterpret_cast< uintptr_t >( stack_top) - reinterpret_cast< uintptr_t >( stack_bottom);
     const fcontext_t fctx = make_fcontext( stack_top, size, & context_entry< Record >);
     BOOST_ASSERT( nullptr != fctx);
     // transfer control structure to context-stack
@@ -178,15 +186,23 @@ fcontext_t context_create( StackAlloc salloc, Fn && fn) {
 
 template< typename Record, typename StackAlloc, typename Fn >
 fcontext_t context_create( preallocated palloc, StackAlloc salloc, Fn && fn) {
+    BOOST_ASSERT( ( sizeof( Record) + 2048) < palloc.size); // stack at least of 2kB
     // reserve space for control structure
-    void * storage = static_cast< char * >( palloc.sp) - sizeof(Record);
-    void * stack_top = static_cast< char * >( storage) - 64;
+    // `storage` should be 16-byte algined
+    void * storage = reinterpret_cast< void * >(
+            ( reinterpret_cast< uintptr_t >( palloc.sp) - static_cast< uintptr_t >( sizeof( Record) - 15) )
+            & ~ static_cast< uintptr_t >( 0x0f) );
     // placment new for control structure on context-stack
     Record * record = new ( storage) Record{
             palloc.sctx, salloc, std::forward< Fn >( fn) };
-    // stack size
-    const std::size_t size = palloc.size - sizeof(Record) - 64;
+    // 64byte gab between control structure and stack top
+    // should be 16byte aligned
+    void * stack_top = reinterpret_cast< void * >(
+            reinterpret_cast< uintptr_t >( storage) - static_cast< uintptr_t >( 64) );
+    void * stack_bottom = reinterpret_cast< void * >(
+            reinterpret_cast< uintptr_t >( palloc.sctx.sp) - static_cast< uintptr_t >( palloc.sctx.size) );
     // create fast-context
+    const std::size_t size = reinterpret_cast< uintptr_t >( stack_top) - reinterpret_cast< uintptr_t >( stack_bottom);
     const fcontext_t fctx = make_fcontext( stack_top, size, & context_entry< Record >);
     BOOST_ASSERT( nullptr != fctx);
     // transfer control structure to context-stack

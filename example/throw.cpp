@@ -10,35 +10,36 @@
 #include <stdexcept>
 #include <string>
 
-#include <boost/context/continuation.hpp>
+#include <boost/context/fiber.hpp>
 
 namespace ctx = boost::context;
 
 struct my_exception : public std::runtime_error {
-    ctx::continuation    c;
-    my_exception( ctx::continuation && c_, std::string const& what) :
+    ctx::fiber    f;
+    my_exception( ctx::fiber && f_, std::string const& what) :
         std::runtime_error{ what },
-        c{ std::move( c_) } {
+        f{ std::move( f_) } {
     }
 };
 
 int main() {
-    ctx::continuation c = ctx::callcc([](ctx::continuation && c) {
+    ctx::fiber f{ [](ctx::fiber && f) {
         for (;;) {
             try {
                 std::cout << "entered" << std::endl;
-                c = c.resume();
+                f = f.resume();
             } catch ( my_exception & ex) {
                 std::cerr << "my_exception: " << ex.what() << std::endl;
-                return std::move( ex.c);
+                return std::move( ex.f);
             }
         }
-        return std::move( c);
-    });
-    c = c.resume_with(
-           [](ctx::continuation && c){
-               throw my_exception(std::move( c), "abc");
-               return std::move( c);
+        return std::move( f);
+    }};
+    f = f.resume();
+    f = f.resume_with(
+           [](ctx::fiber && f){
+               throw my_exception(std::move( f), "abc");
+               return std::move( f);
            });
 
     std::cout << "main: done" << std::endl;
